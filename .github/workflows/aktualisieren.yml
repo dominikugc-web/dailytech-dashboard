@@ -26,12 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: pip install --quiet yt-dlp
       - name: Zahlen holen und verschlüsseln
         env:
           DASHBOARD_PASSWORT: ${{ secrets.DASHBOARD_PASSWORT }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
-          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
         run: python -I werkzeuge/aktualisieren.py
         working-directory: ${{ github.workspace }}
       - name: Hochladen

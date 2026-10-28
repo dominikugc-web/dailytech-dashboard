@@ -33,14 +33,34 @@ def prognose(punkte, ziel):
 def video_eintrag(r, p, themen, datum_zu_nr):
     """Eine Zeile im Format von auswertung.csv wird zu einem Video fürs Dashboard (mit Nummer und Thema)."""
     nr = datum_zu_nr.get(r["datum"])
-    if not nr and p == "YouTube":  # YouTube liefert kein Datum: über das Thema im Titel zuordnen
+    if p == "YouTube":  # YouTube-Shorts gingen teils an anderen Tagen raus: das Thema im Titel zählt mehr als das Datum
         titel = (r["titel"] or "").lower()
-        nr = next((n for n, t in themen.items() if t.split()[0].lower()[:6] in titel), None)
+        kandidaten = [n for n, t in themen.items() if t.split()[0].lower()[:6] in titel]
+        teil = next((k for k in kandidaten if f"teil {titel.split('teil ')[1][:1]}" in themen[k].lower()), None) if "teil " in titel else None
+        if kandidaten and nr not in kandidaten:
+            nr = teil or kandidaten[0]
     return {
-        "nr": nr, "thema": themen.get(nr, r["titel"] or "ohne Titel"), "datum": r["datum"] if r["datum"] != "unbekannt" else None,
+        "nr": nr, "thema": themen.get(nr, r["titel"] or "ohne Titel"), "titel": r["titel"], "datum": r["datum"] if r["datum"] != "unbekannt" else None,
         "views": zahl(r["views"]), "likes": zahl(r["likes"]), "like_rate": zahl(r["like_rate_%"]), "kommentare": zahl(r["kommentare"]),
         "shares": zahl(r["shares"]), "saves": zahl(r["saves"]), "reichweite": zahl(r["reichweite"]),
         "watchtime_s": zahl(r["watchtime_s"]), "dauer_s": zahl(r["dauer_s"]), "link": r["link"]}
+
+
+def doppelte_aufloesen(videos, themen):
+    """Zwei Videos am selben Tag bekommen über das Datum dieselbe Nummer (am 26.10. gingen 008 und 009 zusammen raus).
+    Das Video, dessen Titel nicht zum Thema passt, wird zur fehlenden Nummer davor."""
+    vorhanden = {v["nr"] for v in videos}
+    for nr in sorted({v["nr"] for v in videos if v["nr"]}):
+        gleiche = [v for v in videos if v["nr"] == nr]
+        davor = f"{int(nr) - 1:03d}"
+        if len(gleiche) < 2 or davor in vorhanden or davor not in themen:
+            continue
+        wort = themen[nr].split()[0].lower()[:6]
+        passt_nicht = [v for v in gleiche if wort not in (v.get("titel") or "").lower()]
+        v = (passt_nicht or gleiche)[0]  # ohne Titel (TikTok) bleibt es geraten
+        v["nr"], v["thema"] = davor, themen[davor]
+        vorhanden.add(davor)
+    return videos
 
 
 def aufbereiten(videos, follower, verlauf_views, einst, produktion, heute, abruf, abruf_zeit=None):
