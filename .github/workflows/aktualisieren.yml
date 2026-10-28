@@ -1,0 +1,48 @@
+name: Zahlen holen
+
+# Startet über den Knopf „Zahlen holen“ auf der Seite oder hier auf GitHub mit „Run workflow“.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: zahlen-holen
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  holen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Europe/Berlin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install --quiet yt-dlp
+      - name: Zahlen holen und verschlüsseln
+        env:
+          DASHBOARD_PASSWORT: ${{ secrets.DASHBOARD_PASSWORT }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: python -I werkzeuge/aktualisieren.py
+        working-directory: ${{ github.workspace }}
+      - name: Hochladen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "Daily-Tech Knopf"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add daten.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "Zahlen über den Knopf geholt"
+          git pull -q --rebase
+          git push -q
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent || true
