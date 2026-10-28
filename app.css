@@ -34,11 +34,14 @@ body {
   min-height: 100dvh;
   font: 500 15px/1.5 var(--font);
   color: var(--text);
+  background: var(--bg);
+}
+/* Leuchten als eigene feste Ebene: background-attachment:fixed malt bei jedem Scrollen alles neu */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background:
     radial-gradient(900px 600px at 85% -10%, rgb(124 58 237 / 0.22), transparent 60%),
-    radial-gradient(700px 500px at -10% 110%, rgb(26 163 176 / 0.10), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
+    radial-gradient(700px 500px at -10% 110%, rgb(26 163 176 / 0.10), transparent 60%);
 }
 h1, h2, h3 { font-family: var(--font-zahl); font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 h1 { font-size: 1.75rem; line-height: 1.2; }
@@ -54,9 +57,12 @@ a { color: var(--lila-hell); }
   background: var(--glass);
   border: 1px solid var(--rand);
   border-radius: var(--radius-l);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 10px 30px rgb(5 2 15 / 0.45);
+}
+/* Unschärfe nur dort, wo Inhalt darunter durchläuft; auf jeder Karte bremst sie das Scrollen */
+.sidebar, .login-card {
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 10px 30px rgb(5 2 15 / 0.45);
 }
 
 .brand {
