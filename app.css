@@ -59,11 +59,7 @@ a { color: var(--lila-hell); }
   border-radius: var(--radius-l);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 10px 30px rgb(5 2 15 / 0.45);
 }
-/* Unschärfe nur dort, wo Inhalt darunter durchläuft; auf jeder Karte bremst sie das Scrollen */
-.sidebar, .login-card {
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-}
+/* Unschärfe nur auf der Tab-Leiste am Handy, unter der Inhalt durchläuft; überall sonst bremst sie nur */
 
 .brand {
   display: inline-grid; place-items: center;
@@ -124,6 +120,11 @@ a { color: var(--lila-hell); }
 .inhalt { display: grid; gap: 1.25rem; align-content: start; min-inline-size: 0; outline: none; }
 .kopf { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 1rem; padding-block: 0.25rem 0.5rem; }
 .kopf p { margin-block-start: 0.3rem; }
+.kopf-rechts { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: end; }
+.btn-holen { padding: 0.45rem 0.95rem; font-size: 0.85rem; border-radius: 999px; }
+.btn-holen:disabled { opacity: 0.7; cursor: progress; }
+.holen-status { flex-basis: 100%; text-align: end; }
+.holen-status:empty { display: none; }
 .chip {
   display: inline-flex; gap: 0.45rem; align-items: center; font-size: 0.82rem; color: var(--text-2);
   padding: 0.4rem 0.8rem; border-radius: 999px; background: var(--glass); border: 1px solid var(--rand);
@@ -256,7 +257,10 @@ tbody tr:hover td, tbody tr:hover th { background: #211940; }
     position: fixed; inset: auto 0.75rem calc(0.75rem + env(safe-area-inset-bottom)) 0.75rem; z-index: 10;
     block-size: auto; flex-direction: row; padding: 0.45rem; border-radius: 20px;
   }
+  .sidebar { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: rgb(22 15 44 / 0.78); }
   .side-brand, .abmelden { display: none; }
+  .kopf-rechts { justify-content: start; }
+  .holen-status { text-align: start; }
   .sidebar ul { grid-auto-flow: column; grid-auto-columns: 1fr; inline-size: 100%; }
   .sidebar a { flex-direction: column; gap: 0.15rem; padding: 0.45rem 0.2rem; font-size: 0.66rem; justify-content: center; text-align: center; }
   .nav-lang { display: none; }

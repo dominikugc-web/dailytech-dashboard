@@ -32,18 +32,27 @@ const SEITEN = [
 ];
 
 let D = null;
+let PW = null;      // bleibt nur im Speicher dieses Tabs, damit neue Zahlen ohne erneute Eingabe lesbar sind
+let DATEI_IV = null; // ändert sich bei jedem Hochladen: so merkt die Seite, dass neue Zahlen da sind
 const charts = [];
+const REPO = "dominikugc-web/dailytech-dashboard";
+const WORKFLOW = "aktualisieren.yml";
 
+async function ladeDatei() {
+  // GitHub Pages hält Dateien bis zu 10 Minuten im Zwischenspeicher, der Zeitstempel umgeht das
+  const res = await fetch(`daten.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Die Daten konnten nicht geladen werden.");
+  return res.json();
+}
 /* ---------- Entschlüsseln (AES-256-GCM, Schlüssel per PBKDF2-SHA256, wie tools/verschluesseln.mjs) ---------- */
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 async function entschluesseln(passwort) {
-  const res = await fetch("daten.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("Die Daten konnten nicht geladen werden.");
-  const p = await res.json();
+  const p = await ladeDatei();
   const basis = await crypto.subtle.importKey("raw", new TextEncoder().encode(passwort), "PBKDF2", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(p.salt), iterations: p.iter, hash: "SHA-256" },
     basis, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
   const klar = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(p.iv) }, key, b64(p.daten));
+  DATEI_IV = p.iv;
   return JSON.parse(new TextDecoder().decode(klar));
 }
 
@@ -62,6 +71,7 @@ async function anmelden(passwort, merken) {
   knopf.disabled = true; knopf.textContent = "Entschlüssele …"; fehler.textContent = "";
   try {
     D = await entschluesseln(passwort);
+    PW = passwort;
     if (merken) speicher("set", passwort);
     document.getElementById("login").hidden = true;
     document.getElementById("app").hidden = false;
@@ -85,7 +95,7 @@ function aktuelleSeite() {
   const id = location.hash.slice(1);
   return SEITEN.find(s => s.id === id) ?? SEITEN[0];
 }
-function zeige() {
+function zeige({ oben = true } = {}) {
   const seite = aktuelleSeite();
   document.querySelectorAll("#nav a").forEach(a => { if (a.dataset.id === seite.id) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   charts.splice(0).forEach(c => c.destroy());
@@ -95,14 +105,19 @@ function zeige() {
     : seite.id === "geld" ? seiteGeld() : seiteProduktion();
   document.title = `${seite.titel} · Daily-Tech Zahlen`;
   requestAnimationFrame(() => { zeichneDiagramme(seite); fuelleRinge(); });
-  inhalt.focus({ preventScroll: true });
-  window.scrollTo({ top: 0 });
+  if (oben) { inhalt.focus({ preventScroll: true }); window.scrollTo({ top: 0 }); }
 }
 
 /* ---------- Bausteine ---------- */
 function kopf(titel, text) {
   return `<header class="kopf"><div><h1>${titel}</h1><p class="muted">${text}</p></div>
-    <span class="chip">Stand ${fmtDatum(D.stand)}${D.abruf && D.abruf !== D.stand ? ` · Videozahlen vom ${fmtDatum(D.abruf)}` : ""}</span></header>`;
+    <div class="kopf-rechts"><span class="chip">${standText()}</span>
+    <button type="button" class="btn btn-holen" data-holen ${holen.laeuft ? "disabled" : ""}>${holen.laeuft ? "Holt Zahlen …" : "Zahlen holen"}</button>
+    <span class="klein holen-status" role="status">${holen.text}</span></div></header>`;
+}
+function standText() {
+  const abruf = D.abruf_zeit ? `${fmtDatum(D.abruf)}, ${D.abruf_zeit} Uhr` : D.abruf ? fmtDatum(D.abruf) : null;
+  return abruf ? `Zahlen vom ${abruf}` : `Stand ${fmtDatum(D.stand)}`;
 }
 function delta(neu, alt, einheit = "") {
   if (neu === null || alt === null || alt === undefined) return `<span class="delta null">noch kein Vergleich</span>`;
@@ -126,6 +141,57 @@ function vorratHinweis() {
     `${D.produktion.skripte_offen} Skripte warten auf ihr Video. Lass im Produktions-Chat die nächsten Videos bauen.`);
 }
 
+function knopfHinweis() {
+  const fehlt = Object.entries(D.knopf_ergebnis ?? {}).filter(([, e]) => e !== "aktuell").map(([p]) => p);
+  if (!fehlt.length) return "";
+  return hinweis("warn", `${fehlt.join(" und ")} ${fehlt.length > 1 ? "kamen" : "kam"} beim letzten Abruf nicht durch`,
+    "Dort stehen noch die Zahlen vom Abruf davor. Versuch es später noch mal, sonst kommen sie am Montag.");
+}
+
+/* ---------- Knopf „Zahlen holen“: startet den Abruf bei GitHub und wartet auf die neue Datei ---------- */
+const holen = { laeuft: false, text: "" };
+function zeigeHolen(text, laeuft = holen.laeuft) {
+  Object.assign(holen, { text, laeuft });
+  document.querySelectorAll("[data-holen]").forEach(b => { b.disabled = laeuft; b.textContent = laeuft ? "Holt Zahlen …" : "Zahlen holen"; });
+  document.querySelectorAll(".holen-status").forEach(s => { s.textContent = text; });
+}
+async function zahlenHolen() {
+  const start = Date.now();
+  if (D.knopf_token) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/dispatches`, {
+      method: "POST", headers: { Authorization: `Bearer ${D.knopf_token}`, Accept: "application/vnd.github+json" }, body: JSON.stringify({ ref: "main" }) });
+    if (!res.ok) { zeigeHolen(res.status === 401 ? "Der GitHub-Schlüssel für den Knopf ist abgelaufen." : "GitHub hat den Abruf abgelehnt.", false); return; }
+  } else {
+    // Ohne Schlüssel öffnet der Knopf die Seite bei GitHub, dort einmal auf „Run workflow“ tippen
+    window.open(`https://github.com/${REPO}/actions/workflows/${WORKFLOW}`, "_blank", "noopener");
+  }
+  zeigeHolen("Läuft, dauert etwa 3 Minuten. Du kannst die Seite offen lassen.", true);
+  const altIv = DATEI_IV;
+  while (Date.now() - start < 12 * 60 * 1000) {
+    await new Promise(r => setTimeout(r, 15000));
+    try {
+      const p = await ladeDatei();
+      if (p.iv !== altIv) {
+        D = await entschluesseln(PW);
+        zeigeHolen(`Neue Zahlen geladen um ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr.`, false);
+        zeige({ oben: false });
+        return;
+      }
+      if (D.knopf_token && Date.now() - start > 60000 && await abrufFehlgeschlagen(start)) {
+        zeigeHolen("Der Abruf ist bei GitHub fehlgeschlagen. Versuch es später noch mal.", false);
+        return;
+      }
+    } catch { /* kurz kein Netz: beim nächsten Durchgang weiter */ }
+  }
+  zeigeHolen("Das dauert ungewöhnlich lange. Lade die Seite später neu.", false);
+}
+async function abrufFehlgeschlagen(start) {
+  const res = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`,
+    { headers: { Authorization: `Bearer ${D.knopf_token}`, Accept: "application/vnd.github+json" } });
+  const lauf = res.ok ? (await res.json()).workflow_runs?.[0] : null;
+  return lauf && new Date(lauf.created_at) >= new Date(start - 60000) && lauf.status === "completed" && lauf.conclusion !== "success";
+}
+
 /* ---------- Seite: Übersicht ---------- */
 function seiteUebersicht() {
   const P = D.plattformen;
@@ -139,6 +205,7 @@ function seiteUebersicht() {
   <section class="raster" aria-label="Wichtige Hinweise">
     ${status?.verstoss_offen ? hinweis("krit", "Instagram-Monetarisierung ist gesperrt", status.text) : ""}
     ${vorratHinweis()}
+    ${knopfHinweis()}
   </section>
   <section class="raster" aria-label="Kennzahlen">
     ${kpi("Follower auf allen Kanälen", n(summeF))}
@@ -319,5 +386,6 @@ document.getElementById("login-form").addEventListener("submit", e => {
 });
 document.getElementById("abmelden").addEventListener("click", () => { speicher("del"); location.hash = ""; location.reload(); });
 window.addEventListener("hashchange", () => D && zeige());
+document.getElementById("inhalt").addEventListener("click", e => { if (e.target.closest("[data-holen]") && !holen.laeuft) zahlenHolen(); });
 const gemerkt = speicher("get");
 if (gemerkt) anmelden(gemerkt, true);
